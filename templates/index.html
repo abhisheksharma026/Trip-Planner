@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trip Planner - Multi-Agent System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>AI Trip Planner</h1>
+                <p class="subtitle">Multi-Agent System for Intelligent Trip Planning</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Chat Interface (Primary - Top) -->
+            <section class="chat-section">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <h2>Chat with Your Travel Agent</h2>
+                        <div class="header-buttons">
+                            <button class="btn-success" id="satisfiedBtn" style="display: none;">✓ I'm Satisfied</button>
+                            <button class="btn-secondary" id="newSessionBtn">New Session</button>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message agent-message">
+                            <div class="message-avatar">AI</div>
+                            <div class="message-content">
+                                <p>Hello! I'm your AI travel concierge. I can help you plan complete trips by finding flights, hotels, and analyzing your budget. How can I assist you today?</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <form id="chatForm" class="chat-form">
+                            <input 
+                                type="text" 
+                                id="queryInput" 
+                                class="chat-input" 
+                                placeholder="Ask me anything about trip planning..."
+                                autocomplete="off"
+                            >
+                            <button type="submit" class="btn-primary" id="sendBtn">
+                                <span class="btn-text">Send</span>
+                                <span class="btn-loader" style="display: none;">...</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sample Queries Section (Bottom) -->
+            <section class="samples-section">
+                <h2>Sample Queries</h2>
+                <p class="section-description">Try these sample queries to see what the agent can do:</p>
+                <div class="samples-grid" id="samplesGrid">
+                    <!-- Samples will be loaded dynamically -->
+                    <div class="loading">Loading samples...</div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Powered by Google ADK (Agent Development Kit)</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+
