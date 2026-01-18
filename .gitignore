@@ -1,0 +1,104 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+venv*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables - CRITICAL: Never commit these
+.env
+.env.*
+.env.local
+.env.development
+.env.staging
+.env.production
+.env.test
+*.env
+!.env.example
+
+# API Keys and Credentials - CRITICAL: Never commit these
+*.key
+*.pem
+*.p12
+*.pfx
+api_key.txt
+credentials.json
+service-account*.json
+*-credentials.json
+*.credentials
+secrets.json
+secrets.yaml
+secrets.yml
+config.secret.*
+
+# Itineraries
+itineraries/
+*.md
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flask
+instance/
+.webassets-cache
+
+# Logs (may contain sensitive data)
+logs/
+*.log
+
+# SSL/TLS certificates
+ssl/
+certs/
+*.crt
+*.cer
+
+# Docker secrets
+docker-compose.override.yml
+.docker/
+
+# Terraform/Infrastructure (may contain secrets)
+*.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# AWS
+.aws/
+
+# Google Cloud
+.gcloud/
+gcloud-service-key.json
