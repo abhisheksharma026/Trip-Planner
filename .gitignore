@@ -62,7 +62,6 @@ config.secret.*
 
 # Itineraries
 itineraries/
-*.md
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
