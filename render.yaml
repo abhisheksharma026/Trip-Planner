@@ -1,0 +1,27 @@
+# Render Blueprint for AI Trip Planner
+# This file enables one-click deployment to Render
+
+services:
+  - type: web
+    name: trip-planner
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Or use Python runtime:
+    # runtime: python
+    # buildCommand: pip install -r requirements.txt
+    # startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: SECRET_KEY
+        generateValue: true  # Auto-generate a secure secret
+      - key: DAILY_API_LIMIT
+        value: "200"
+      - key: DATABASE_PATH
+        value: /opt/render/project/data/trip_planner.db
+    disk:
+      name: data
+      mountPath: /opt/render/project/data
+      sizeGB: 1  # Free tier includes 1GB persistent disk

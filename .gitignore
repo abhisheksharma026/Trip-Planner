@@ -63,6 +63,18 @@ config.secret.*
 # Itineraries
 itineraries/
 
+# Database and Runtime Data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated Plans and Artifacts
+plans/
+
+# Browser Cookies (session data, sensitive)
+cookies.txt
+
 # Jupyter Notebooks
 .ipynb_checkpoints/
 *.ipynb

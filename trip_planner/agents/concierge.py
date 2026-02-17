@@ -26,7 +26,7 @@ def get_query_span():
     try:
         from trip_planner.core.runner import get_current_query_span
         return get_current_query_span()
-    except:
+    except (ImportError, AttributeError, RuntimeError):
         return None
 
 

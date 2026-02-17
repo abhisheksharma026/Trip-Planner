@@ -82,7 +82,9 @@ def _parse_dt(dt_str: Optional[str]) -> Optional[datetime]:
         dt_str = dt_str.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(dt_str)
-    except Exception:
+    except (ValueError, TypeError):
+        # ValueError: Invalid ISO format
+        # TypeError: dt_str is None
         return None
 
 
@@ -107,7 +109,9 @@ def _extract_best_offer(offers: List[Dict[str, Any]]) -> Optional[Dict[str, Any]
     def _price(o: Dict[str, Any]) -> float:
         try:
             return float(o.get("price", {}).get("grandTotal", "inf"))
-        except Exception:
+        except (ValueError, TypeError):
+            # ValueError: price is not a valid number
+            # TypeError: price field is None
             return float("inf")
 
     best = min(offers, key=_price)
@@ -237,13 +241,13 @@ async def search_flight_prices(
 
     try:
         base_depart = _parse_date(departure_date)
-    except Exception:
+    except (ValueError, TypeError):
         return f"Could not parse departure_date '{departure_date}'. Please use YYYY-MM-DD."
 
     if return_date:
         try:
             _parse_date(return_date)
-        except Exception:
+        except (ValueError, TypeError):
             return f"Could not parse return_date '{return_date}'. Please use YYYY-MM-DD."
 
     try:

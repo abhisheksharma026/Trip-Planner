@@ -37,12 +37,15 @@ Trip Planner/
 │   ├── tools/                 # Custom tools
 │   │   ├── __init__.py
 │   │   ├── geolocation.py     # City to coordinates
+│   │   ├── amadeus_flights.py # Real flight search
 │   │   └── export.py          # Itinerary export
 │   └── core/                  # Core functionality
 │       ├── __init__.py
 │       ├── session_manager.py  # Session handling
-│       └── runner.py          # Query execution
-├── app.py                     # Flask web application
+│       ├── runner.py          # Query execution
+│       ├── rate_limiter.py    # Rate limiting
+│       └── auth.py            # User authentication
+├── app.py                     # FastAPI web application
 ├── main.py                    # CLI application entry point
 ├── templates/                 # HTML templates
 │   └── index.html            # Web app frontend
@@ -51,6 +54,10 @@ Trip Planner/
 │   │   └── style.css         # Stylesheet
 │   └── js/
 │       └── app.js            # Frontend JavaScript
+├── Dockerfile                 # Docker configuration
+├── docker-compose.yml         # Docker Compose
+├── Makefile                   # Development commands
+├── render.yaml                # Render deployment
 ├── requirements.txt           # Dependencies
 └── README.md                  # This file
 ```
@@ -58,20 +65,76 @@ Trip Planner/
 ## Features
 
 - **Multi-Agent System**: Specialized agents for flights, hotels, and finances
-- **Custom Tools**: Geolocation and export capabilities
+- **Custom Tools**: Geolocation, real flight search (Amadeus), and export capabilities
 - **Conversational Memory**: Session-based context retention
 - **Budget Management**: Financial analysis and cost tracking
 - **Real-time Search**: Google Search integration for live prices
 - **Modular Design**: Clean separation of responsibilities
+- **Production Ready**: Rate limiting, authentication, Docker support
+
+## Production Features
+
+### Rate Limiting
+- **Global limit**: 200 API calls/day (configurable)
+- **Per-IP limit**: 100 calls/hour, 20 calls/minute
+- **Anonymous users**: 5 free queries before login required
+- **Authenticated users**: 50 calls/day per user
+
+### User Authentication
+- Email/password registration
+- Secure password hashing (PBKDF2-SHA256)
+- SQLite database for persistence
+- Session-based authentication
+
+### Docker Support
+- Containerized deployment
+- Persistent volume for database
+- Health checks
+- Docker Compose for local development
 
 ## Prerequisites
 
 - **Python 3.10 or higher** (required for MCP/ADK dependencies)
-- Bash shell (macOS/Linux) or Command Prompt/PowerShell (Windows)
+- **uv** (recommended) or pip for package management
+- **Docker** (optional, for containerized deployment)
 
 ## Quick Start
 
-### Automated Setup (Recommended)
+### Option 1: Using uv (Recommended - Faster)
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package installer and resolver.
+
+1. **Install uv:**
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Clone and setup:**
+   ```bash
+   git clone <repository-url>
+   cd "Trip Planner"
+   
+   # Create virtual environment and install dependencies
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv pip install -e .
+   ```
+
+3. **Set your API key:**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your GOOGLE_API_KEY
+   ```
+   
+   Get your key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+
+4. **Run the application:**
+   ```bash
+   uv run python app.py     # Web app
+   uv run python main.py    # CLI app
+   ```
+
+### Option 2: Using pip
 
 1. **Run the setup script:**
    ```bash
@@ -80,12 +143,13 @@ Trip Planner/
 
 2. **Set your API key:**
    
-   **Option 1: Create a `.env` file (Recommended):**
+   **Option A: Create a `.env` file (Recommended):**
    ```bash
-   echo "GOOGLE_API_KEY=your_api_key_here" > .env
+   cp .env.example .env
+   # Edit .env and add your GOOGLE_API_KEY
    ```
    
-   **Option 2: Set environment variable:**
+   **Option B: Set environment variable:**
    ```bash
    export GOOGLE_API_KEY=your_api_key_here
    ```
@@ -96,61 +160,35 @@ Trip Planner/
    ```bash
    ./run.sh          # Web app (default)
    ./run.sh web      # Web app explicitly
-   ./run.sh cli       # CLI application
+   ./run.sh cli      # CLI application
    ```
 
 See [SETUP.md](SETUP.md) for detailed instructions.
 
-### Manual Setup
+### Option 3: Using Docker
 
-<details>
-<summary>Click to expand manual setup instructions</summary>
+1. **Start Docker Desktop**
 
-### 1. Install Dependencies
+2. **Build and run:**
+   ```bash
+   make run-docker
+   # or
+   docker compose up --build
+   ```
+
+3. **Open your browser:**
+   ```
+   http://localhost:5000
+   ```
+
+### Option 4: Using Makefile
 
 ```bash
-pip install -r requirements.txt
-```
-
-Or install directly:
-
-```bash
-pip install google-adk google-generativeai flask flask-cors
-```
-
-### 2. Get API Key
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Generate an API key
-3. Set it as an environment variable:
-
-**Mac/Linux:**
-```bash
-export GOOGLE_API_KEY=your_api_key_here
-```
-
-**Windows:**
-```bash
-setx GOOGLE_API_KEY "your_api_key_here"
-```
-
-Or the application will prompt you to enter it when you run it.
-
-### 3. Run the Application
-
-**Web Application (Recommended):**
-```bash
-python app.py
-```
-Then open http://localhost:5000 in your browser.
-
-**CLI Application:**
-```bash
-# Interactive Mode
-python main.py
-
-# Single Query Mode
-python main.py "I want to plan a trip to Paris next month"
+make help          # Show all available commands
+make install       # Install dependencies
+make run           # Run on port 5000
+make run-dev       # Run with auto-reload on port 8000
+make run-docker    # Run in Docker
 ```
 
 ## Web Application
@@ -164,9 +202,9 @@ The project includes a modern web interface for easy interaction.
    pip install -r requirements.txt
    ```
 
-2. **Start the Flask server**:
+2. **Start the server**:
    ```bash
-   python app.py
+   python -m uvicorn app:app --host 0.0.0.0 --port 5000
    ```
 
 3. **Open your browser** and navigate to:
@@ -179,6 +217,8 @@ The project includes a modern web interface for easy interaction.
 - **Interactive Chat Interface**: Real-time conversation with the AI agent
 - **Sample Queries**: Click on sample queries to see expected formats
 - **Session Management**: Start new sessions to clear conversation history
+- **User Authentication**: Register/login for extended usage
+- **Rate Limit Feedback**: Visual warnings when approaching limits
 - **Modern UI**: Beautiful, responsive design that works on all devices
 
 ### Sample Queries in the Web App
@@ -250,35 +290,51 @@ You: Can you also check flights for my return trip?
 
 ### `trip_planner/tools/`
 - **geolocation.py**: City name to coordinates conversion
+- **amadeus_flights.py**: Real flight search via Amadeus API
 - **export.py**: Itinerary export to markdown files
 
 ### `trip_planner/core/`
 - **session_manager.py**: Manages conversation sessions and memory
 - **runner.py**: Executes queries and handles agent interactions
+- **rate_limiter.py**: Multi-level rate limiting
+- **auth.py**: User authentication and session management
 
-## Production Enhancements
+## Deployment
 
-To make this production-ready, consider:
+### Deploy to Render (Recommended)
 
-1. **Real API Integrations**:
-   - Replace mock geolocation with Google Maps Geocoding API
-   - Integrate Google Docs/Sheets API for export
-   - Add flight/hotel booking APIs (Amadeus, Booking.com)
+1. **Push to GitHub**
+   ```bash
+   git add .
+   git commit -m "Ready for deployment"
+   git push origin main
+   ```
 
-2. **Persistence**:
-   - Replace InMemorySessionService with database-backed sessions
-   - Add user authentication
-   - Store trip history
+2. **Create Render Account**
+   - Go to [render.com](https://render.com)
+   - Sign up (free tier available)
 
-3. **Additional Features**:
-   - Activity/attraction recommendations
-   - Weather integration
-   - Travel document reminders
-   - Multi-user support
+3. **Create Web Service**
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repository
+   - Render will detect `render.yaml`
 
-4. **Web Interface**:
-   - Use ADK's web UI: `adk run --agent trip_planner_concierge`
-   - Or build a custom web interface
+4. **Set Environment Variables**
+   - In Render dashboard, set `GOOGLE_API_KEY`
+
+5. **Deploy**
+   - Click "Create Web Service"
+   - Get your public URL!
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GOOGLE_API_KEY` | Google Gemini API key | Required |
+| `SECRET_KEY` | Session secret | Auto-generated |
+| `DAILY_API_LIMIT` | Global daily limit | 200 |
+| `ANONYMOUS_FREE_LIMIT` | Free queries for anonymous | 5 |
+| `DATABASE_PATH` | SQLite database path | data/trip_planner.db |
 
 ## Testing
 
@@ -288,6 +344,29 @@ The application includes built-in testing capabilities. You can test various sce
 2. **Vague requests**: Agent asks clarifying questions
 3. **Memory**: Agent remembers preferences across conversation
 4. **Export**: Itinerary export functionality
+5. **Rate limiting**: Test with multiple requests
+6. **Authentication**: Register, login, logout flows
+
+## Blog Series
+
+This project is documented in a blog series:
+
+### Phase I - MVP Travel Planner
+- [Part 1: Setup and Architecture](blog/Phase%20I%20—%20MVP%20travel%20planner/part1-setup-and-architecture.md)
+- [Part 2: Configuration and Environment](blog/Phase%20I%20—%20MVP%20travel%20planner/part2-configuration-and-environment.md)
+- [Part 3: Configuration Module](blog/Phase%20I%20—%20MVP%20travel%20planner/part3-configuration-module.md)
+- [Part 4: Session Management](blog/Phase%20I%20—%20MVP%20travel%20planner/part4-session-management.md)
+- [Part 5: Specialized Agents](blog/Phase%20I%20—%20MVP%20travel%20planner/part5-specialized-agents.md)
+- [Part 6: Concierge Orchestrator](blog/Phase%20I%20—%20MVP%20travel%20planner/part6-concierge-orchestrator.md)
+- [Part 7: Custom Tools](blog/Phase%20I%20—%20MVP%20travel%20planner/part7-custom-tools.md)
+- [Part 8: Web Interface](blog/Phase%20I%20—%20MVP%20travel%20planner/part8-web-interface.md)
+- [Part 9: Observability](blog/Phase%20I%20—%20MVP%20travel%20planner/part9-observability.md)
+- [Part 10: Running and Testing](blog/Phase%20I%20—%20MVP%20travel%20planner/part10-running-and-testing.md)
+
+### Phase II - Production Ready
+- [Part 1: Rate Limiting](blog/Phase%20II%20—%20Production%20Ready/part1-rate-limiting.md)
+- [Part 2: Authentication](blog/Phase%20II%20—%20Production%20Ready/part2-authentication.md)
+- [Part 3: Docker and Deployment](blog/Phase%20II%20—%20Production%20Ready/part3-docker-and-deployment.md)
 
 ## License
 
@@ -302,4 +381,3 @@ For issues or questions, refer to:
 ---
 
 **Happy Trip Planning!**
-

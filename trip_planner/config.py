@@ -97,7 +97,10 @@ def setup_opik():
                 # Enable tracing if not already enabled
                 if hasattr(opik, 'set_tracing_active'):
                     opik.set_tracing_active(True)
-        except Exception:
+        except (ImportError, AttributeError, KeyError):
+            # ImportError: opik not installed
+            # AttributeError: opik API changed
+            # KeyError: missing configuration
             pass  # SDK will use environment variables
         
         print(f"Opik configured successfully!")

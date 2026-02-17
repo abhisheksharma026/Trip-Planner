@@ -1,0 +1,21 @@
+services:
+  trip-planner:
+    build: .
+    ports:
+      - "8000:5000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - AMADEUS_API_KEY=${AMADEUS_API_KEY}
+      - AMADEUS_API_SECRET=${AMADEUS_API_SECRET}
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - DAILY_API_LIMIT=${DAILY_API_LIMIT:-200}
+      - DATABASE_PATH=/app/data/trip_planner.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

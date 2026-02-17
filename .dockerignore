@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment files (should be set via Render dashboard)
+.env
+.env.local
+.env.*.local
+
+# Data (will be mounted as volume)
+data/*.db
+data/*.json
+
+# Documentation
+*.md
+blog/
+plans/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+*.test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude settings
+.claude/
+
+# Temporary files
+*.tmp
+*.temp
+*.log

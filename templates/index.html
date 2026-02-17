@@ -3,77 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AI Trip Planner - Multi-Agent System for intelligent trip planning with flights, hotels, and budget analysis">
+    <meta name="keywords" content="AI, trip planner, travel agent, flight booking, hotel search, travel planning">
+    <meta name="author" content="AI Trip Planner">
+    <meta name="theme-color" content="#6366f1">
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="AI Trip Planner - Multi-Agent System">
+    <meta property="og:description" content="Plan your perfect trip with AI-powered assistance for flights, hotels, and budget analysis">
+
     <title>AI Trip Planner - Multi-Agent System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
 </head>
 <body>
+    <!-- Animated Background -->
+    <div class="background-animation">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+    </div>
+
     <div class="container">
         <!-- Header -->
-        <header class="header">
+        <header class="header" role="banner">
             <div class="header-content">
-                <h1>AI Trip Planner</h1>
-                <p class="subtitle">Multi-Agent System for Intelligent Trip Planning</p>
+                <div class="header-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                        <path d="M15 10l5-5"></path>
+                        <path d="M20 5v5"></path>
+                    </svg>
+                </div>
+                <div class="header-text">
+                    <h1>AI Trip Planner</h1>
+                    <p class="subtitle">Multi-Agent System for Intelligent Trip Planning</p>
+                </div>
+                <div class="header-status">
+                    <span class="status-indicator" aria-label="System status"></span>
+                </div>
             </div>
         </header>
 
         <!-- Main Content -->
-        <main class="main-content">
-            <!-- Chat Interface (Primary - Top) -->
-            <section class="chat-section">
+        <main class="main-content" role="main">
+            <!-- Chat Interface -->
+            <section class="chat-section" aria-labelledby="chat-heading">
                 <div class="chat-container">
                     <div class="chat-header">
-                        <h2>Chat with Your Travel Agent</h2>
+                        <div class="chat-header-info">
+                            <h2 id="chat-heading">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                                Travel Assistant
+                            </h2>
+                            <span class="chat-status" id="chatStatus">Ready to help</span>
+                        </div>
                         <div class="header-buttons">
-                            <button class="btn-success" id="satisfiedBtn" style="display: none;">✓ I'm Satisfied</button>
-                            <button class="btn-secondary" id="newSessionBtn">New Session</button>
+                            <!-- User info / Login button -->
+                            <div id="userInfo" class="user-info" style="display: none;">
+                                <span id="userName" class="user-name"></span>
+                                <button class="btn-secondary" id="logoutBtn" aria-label="Log out">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                                    Logout
+                                </button>
+                            </div>
+                            <button id="loginBtn" class="btn-primary" style="display: none;" aria-label="Log in">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                Login
+                            </button>
+                            <button class="btn-success" id="satisfiedBtn" style="display: none;" aria-label="Mark as satisfied">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                Satisfied
+                            </button>
+                            <button class="btn-secondary" id="newSessionBtn" aria-label="Start new session">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+                                New Session
+                            </button>
                         </div>
                     </div>
-                    
-                    <div class="chat-messages" id="chatMessages">
+
+                    <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-atomic="false">
                         <div class="message agent-message">
-                            <div class="message-avatar">AI</div>
+                            <div class="message-avatar" aria-hidden="true">✈️</div>
                             <div class="message-content">
+                                <div class="message-header">
+                                    <span class="sender-name">Travel Assistant</span>
+                                    <span class="message-time">Just now</span>
+                                </div>
                                 <p>Hello! I'm your AI travel concierge. I can help you plan complete trips by finding flights, hotels, and analyzing your budget. How can I assist you today?</p>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="chat-input-container">
-                        <form id="chatForm" class="chat-form">
-                            <input 
-                                type="text" 
-                                id="queryInput" 
-                                class="chat-input" 
-                                placeholder="Ask me anything about trip planning..."
-                                autocomplete="off"
-                            >
-                            <button type="submit" class="btn-primary" id="sendBtn">
+                        <form id="chatForm" class="chat-form" novalidate>
+                            <div class="input-wrapper">
+                                <input
+                                    type="text"
+                                    id="queryInput"
+                                    class="chat-input"
+                                    placeholder="Ask me anything about trip planning..."
+                                    autocomplete="off"
+                                    aria-label="Type your travel query"
+                                    aria-describedby="inputHint"
+                                >
+                                <span class="input-hint" id="inputHint">Press Enter to send</span>
+                            </div>
+                            <button type="submit" class="btn-primary" id="sendBtn" aria-label="Send message">
+                                <span class="btn-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                </span>
                                 <span class="btn-text">Send</span>
-                                <span class="btn-loader" style="display: none;">...</span>
+                                <span class="btn-loader" aria-hidden="true">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>
+                                </span>
                             </button>
                         </form>
                     </div>
                 </div>
             </section>
 
-            <!-- Sample Queries Section (Bottom) -->
-            <section class="samples-section">
-                <h2>Sample Queries</h2>
-                <p class="section-description">Try these sample queries to see what the agent can do:</p>
-                <div class="samples-grid" id="samplesGrid">
-                    <!-- Samples will be loaded dynamically -->
-                    <div class="loading">Loading samples...</div>
+            <!-- Sample Queries Section -->
+            <section class="samples-section" aria-labelledby="samples-heading">
+                <div class="samples-header">
+                    <div class="samples-title">
+                        <h2 id="samples-heading">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            Sample Queries
+                        </h2>
+                        <p class="section-description">Click any sample to see what the agent can do</p>
+                    </div>
+                </div>
+                <div class="samples-grid" id="samplesGrid" role="list">
+                    <div class="loading-state" aria-live="polite">
+                        <div class="loading-spinner"></div>
+                        <span>Loading samples...</span>
+                    </div>
                 </div>
             </section>
         </main>
 
         <!-- Footer -->
-        <footer class="footer">
-            <p>Powered by Google ADK (Agent Development Kit)</p>
+        <footer class="footer" role="contentinfo">
+            <p>Powered by <span class="tech-badge">Google ADK</span> • Built with <span aria-hidden="true">❤️</span> for travelers</p>
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer" aria-live="assertive" aria-atomic="true"></div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Login</h2>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="authForm">
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required placeholder="Minimum 6 characters" minlength="6">
+                    </div>
+                    <div class="form-group" id="nameGroup" style="display: none;">
+                        <label for="name">Name (optional)</label>
+                        <input type="text" id="name" name="name" placeholder="Your name">
+                    </div>
+                    <div class="form-error" id="formError" style="display: none;"></div>
+                    <button type="submit" class="btn-primary btn-full" id="submitBtn">Login</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <p id="switchModeText">Don't have an account? <a href="#" id="switchToRegister">Register</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', path='js/app.js') }}"></script>
 </body>
 </html>
-
