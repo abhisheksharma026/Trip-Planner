@@ -2,15 +2,9 @@
 
 ## Overview
 
-In Part 8, we built our web interface with FastAPI, HTML, CSS, and JavaScript. Now, let's add **Observability with Opik** - a powerful tool for tracking, debugging, and understanding how our AI agents behave.
+By this point the system is functional, but debugging without traces is guesswork. This part adds Opik instrumentation so we can follow conversation and tool paths end-to-end.
 
-Observability is critical for production AI systems because:
-
-1. **Debugging**: Understand what went wrong when issues occur
-2. **Performance**: Track response times and resource usage
-3. **Quality**: Monitor agent behavior over time
-4. **Improvement**: Identify patterns and areas for optimization
-5. **Compliance**: Track and audit agent decisions
+The objective is faster diagnosis, not vanity dashboards.
 
 ## What is Opik?
 

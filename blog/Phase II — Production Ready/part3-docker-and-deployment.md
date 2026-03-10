@@ -1,6 +1,6 @@
 # Phase II Part 3: Docker, Makefile, and Deployment
 
-In this final part of Phase II, we'll containerize our application and prepare it for production deployment. We'll cover Docker configuration, a Makefile for common tasks, and deployment to Render.
+In this final Phase II step, I focused on deployment mechanics: containerizing the app, standardizing local commands, and documenting a path to run the same artifact in production. We'll cover Docker configuration, a Makefile workflow, and deployment on Render.
 
 ## Table of Contents
 

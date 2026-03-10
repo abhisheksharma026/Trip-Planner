@@ -2,15 +2,9 @@
 
 ## Overview
 
-In Part 4, we built the Session Manager that handles conversation context. Now, let's create our **Specialized Agents** - domain experts that will handle specific aspects of trip planning.
+Here we split responsibilities into specialized agents instead of pushing everything into one giant prompt. That keeps reasoning cleaner and makes failures easier to isolate.
 
-In a multi-agent system, specialized agents are domain experts that focus on specific tasks. They're more effective than a single general-purpose agent because:
-
-1. **Domain expertise**: Each agent specializes in one area
-2. **Focused prompts**: Instructions are clearer and more specific
-3. **Better performance**: Smaller scope means better accuracy
-4. **Easier debugging**: Issues are isolated to specific agents
-5. **Scalability**: Easy to add new specialized agents
+The intent is not theoretical purity; it is operational clarity when the system grows.
 
 ## Our Specialized Agents
 

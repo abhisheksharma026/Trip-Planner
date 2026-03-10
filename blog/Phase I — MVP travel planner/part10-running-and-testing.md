@@ -2,7 +2,9 @@
 
 ## Overview
 
-In Part 9, we added observability with Opik. Now, let's run and test our complete agent system. This is the final part of Phase I - MVP, where we'll verify everything works together.
+Final step of Phase I: run the whole stack like a real system, not isolated snippets. We validate core flows, integration behavior, and failure paths before moving to harder production concerns.
+
+This part is about confidence that the MVP is actually operable.
 
 ## What We'll Test
 

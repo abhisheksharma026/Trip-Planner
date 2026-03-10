@@ -2,14 +2,9 @@
 
 ## Overview
 
-In Part 1, we added rate limiting to protect our API budget. Now we need to answer a critical question: **How do we track usage per user?**
+After rate limiting, identity becomes the next bottleneck. IP-based controls are not enough once multiple users share networks or rotate addresses.
 
-Without authentication, rate limiting is based on IP addresses, which has problems:
-- Multiple users behind the same IP (office, VPN) share the same limit
-- A single user can bypass limits by switching IPs
-- We can't offer personalized quotas
-
-The solution: **Email/password authentication**.
+Here we add email/password auth so usage controls and session behavior map to real users.
 
 ## Why Simple Auth?
 

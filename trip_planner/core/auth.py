@@ -13,11 +13,17 @@ import os
 import hashlib
 import secrets
 import sqlite3
+import re
 from datetime import datetime, date
 from typing import Optional, Dict, Tuple
 
 from pydantic import BaseModel
-from starlette.middleware.sessions import SessionMiddleware
+from trip_planner.config import get_session_settings, get_rate_limit_settings
+from trip_planner.core.redis_client import get_redis_client
+from trip_planner.logging_utils import get_logger
+
+
+logger = get_logger(__name__)
 
 
 # =============================================================================
@@ -26,6 +32,14 @@ from starlette.middleware.sessions import SessionMiddleware
 
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/trip_planner.db")
+RATE_LIMIT_SETTINGS = get_rate_limit_settings()
+_rate_limit_backend = RATE_LIMIT_SETTINGS["backend"]
+_rate_limit_prefix = RATE_LIMIT_SETTINGS["key_prefix"]
+_redis_client = get_redis_client(RATE_LIMIT_SETTINGS["redis_url"]) if _rate_limit_backend == "redis" else None
+logger.info(
+    "User rate-limit backend initialized: %s",
+    "redis" if _redis_client is not None else "memory",
+)
 
 # Ensure data directory exists
 os.makedirs(os.path.dirname(DATABASE_PATH) if os.path.dirname(DATABASE_PATH) else ".", exist_ok=True)
@@ -90,6 +104,9 @@ init_db()
 # =============================================================================
 # Password Utilities
 # =============================================================================
+EMAIL_PATTERN = re.compile(
+    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
+)
 
 def hash_password(password: str) -> str:
     """Hash a password with salt using PBKDF2."""
@@ -110,35 +127,58 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return False
 
 
+def normalize_email(email: str) -> str:
+    """Validate and normalize an email address."""
+    candidate = str(email).strip()
+    if not candidate or len(candidate) > 254:
+        raise ValueError("Invalid email address format")
+    if not EMAIL_PATTERN.fullmatch(candidate):
+        raise ValueError("Invalid email address format")
+
+    local_part, domain_part = candidate.rsplit("@", 1)
+    if len(local_part) > 64 or local_part.startswith(".") or local_part.endswith(".") or ".." in local_part:
+        raise ValueError("Invalid email address format")
+    if domain_part.startswith("-") or domain_part.endswith("-") or ".." in domain_part:
+        raise ValueError("Invalid email address format")
+
+    return candidate.lower()
+
+
 # =============================================================================
 # User Management Functions
 # =============================================================================
 
 def get_user_by_email(email: str) -> Optional[Dict]:
     """Get user by email."""
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError:
+        return None
+
     with get_db_connection() as conn:
-        cursor = conn.execute('SELECT * FROM users WHERE email = ?', (email.lower(),))
+        cursor = conn.execute('SELECT * FROM users WHERE email = ?', (normalized_email,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
 
 def create_user(email: str, password: str, name: str = None) -> User:
     """Create a new user."""
+    normalized_email = normalize_email(email)
     user_id = secrets.token_urlsafe(16)
     password_hash = hash_password(password)
     created_at = datetime.now().isoformat()
-    display_name = name or email.split('@')[0]
+    display_name = name or normalized_email.split('@')[0]
 
     with get_db_connection() as conn:
         conn.execute(
             'INSERT INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)',
-            (user_id, email.lower(), password_hash, display_name, created_at)
+            (user_id, normalized_email, password_hash, display_name, created_at)
         )
         conn.commit()
 
     return User(
         id=user_id,
-        email=email.lower(),
+        email=normalized_email,
         name=display_name,
         created_at=created_at
     )
@@ -146,7 +186,12 @@ def create_user(email: str, password: str, name: str = None) -> User:
 
 def verify_user(email: str, password: str) -> Optional[User]:
     """Verify user credentials."""
-    user_data = get_user_by_email(email)
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError:
+        return None
+
+    user_data = get_user_by_email(normalized_email)
     if not user_data:
         return None
     
@@ -171,20 +216,29 @@ def register_user(email: str, password: str, name: str = None) -> Tuple[Optional
     Returns:
         Tuple of (User, None) on success or (None, error_message) on failure
     """
+    # Validate email
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError as exc:
+        return None, str(exc)
+
     # Validate password
     if len(password) < 6:
         return None, "Password must be at least 6 characters"
+    if len(password) > 128:
+        return None, "Password must be no more than 128 characters"
     
     # Check if user exists
-    if get_user_by_email(email):
+    if get_user_by_email(normalized_email):
         return None, "An account with this email already exists"
     
     # Create user
     try:
-        user = create_user(email, password, name)
+        user = create_user(normalized_email, password, name)
         return user, None
-    except Exception as e:
-        return None, f"Registration failed: {str(e)}"
+    except Exception:
+        logger.exception("Registration failed for user")
+        return None, "Registration failed. Please try again later."
 
 
 def login_user(email: str, password: str) -> Tuple[Optional[User], Optional[str]]:
@@ -194,7 +248,12 @@ def login_user(email: str, password: str) -> Tuple[Optional[User], Optional[str]
     Returns:
         Tuple of (User, None) on success or (None, error_message) on failure
     """
-    user = verify_user(email, password)
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError as exc:
+        return None, str(exc)
+
+    user = verify_user(normalized_email, password)
     if not user:
         return None, "Invalid email or password"
     return user, None
@@ -207,16 +266,17 @@ def login_user(email: str, password: str) -> Tuple[Optional[User], Optional[str]
 def get_session_middleware():
     """Get session middleware for FastAPI."""
     from starlette.middleware.sessions import SessionMiddleware as SM
+    session_settings = get_session_settings()
     
     class ConfiguredSessionMiddleware(SM):
         def __init__(self, app):
             super().__init__(
                 app,
                 secret_key=SECRET_KEY,
-                session_cookie="trip_planner_session",
-                max_age=86400 * 7,  # 7 days
-                same_site="lax",
-                https_only=False  # Set to True in production with HTTPS
+                session_cookie=session_settings["cookie_name"],
+                max_age=session_settings["max_age_seconds"],
+                same_site=session_settings["same_site"],
+                https_only=session_settings["https_only"],
             )
     
     return ConfiguredSessionMiddleware
@@ -239,10 +299,11 @@ def get_current_user(request) -> Optional[User]:
             name=user_data.get("name"),
             created_at=user_data.get("created_at", "")
         )
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, AttributeError):
         # KeyError: Missing required field
         # TypeError: user_data is not a dict
         # ValueError: Pydantic validation error
+        # AttributeError: user_data has wrong type (e.g. str)
         return None
 
 
@@ -269,7 +330,7 @@ def logout_user(request) -> None:
 
 
 # =============================================================================
-# User Rate Limit Tracking (in-memory, resets on restart)
+# User Rate Limit Tracking (Redis-backed with in-memory fallback)
 # =============================================================================
 
 import threading
@@ -285,8 +346,36 @@ def _reset_user_data_if_needed(user_data: Dict, today: date) -> None:
         user_data["reset_date"] = today
 
 
+def _seconds_until_next_day_utc() -> int:
+    """Return seconds until next UTC day boundary."""
+    now = datetime.utcnow()
+    tomorrow = (now.date()).toordinal() + 1
+    tomorrow_date = date.fromordinal(tomorrow)
+    midnight = datetime.combine(tomorrow_date, datetime.min.time())
+    return max(1, int((midnight - now).total_seconds()))
+
+
+def _user_rate_limit_key(user_id: str, today: date) -> str:
+    """Build storage key for user daily rate limiting."""
+    return f"{_rate_limit_prefix}:user_limit:{today.isoformat()}:{user_id}"
+
+
 def get_user_rate_limit(user_id: str, daily_limit: int = 50) -> Dict:
     """Get rate limit status for a specific user."""
+    if _redis_client is not None:
+        today = date.today()
+        key = _user_rate_limit_key(user_id, today)
+        try:
+            count = int(_redis_client.get(key) or 0)
+            return {
+                "count": count,
+                "limit": daily_limit,
+                "remaining": max(0, daily_limit - count),
+                "reset_date": today.isoformat(),
+            }
+        except Exception as exc:  # pragma: no cover - runtime connectivity
+            logger.warning("Redis user rate-limit read failed, using in-memory fallback: %s", exc)
+
     with _user_limits_lock:
         today = date.today()
 
@@ -306,6 +395,20 @@ def get_user_rate_limit(user_id: str, daily_limit: int = 50) -> Dict:
 
 def increment_user_rate_limit(user_id: str, daily_limit: int = 50) -> Tuple[bool, int, int]:
     """Increment rate limit counter for a user."""
+    if _redis_client is not None:
+        today = date.today()
+        key = _user_rate_limit_key(user_id, today)
+        try:
+            count = int(_redis_client.incr(key))
+            if count == 1:
+                _redis_client.expire(key, _seconds_until_next_day_utc())
+
+            if count > daily_limit:
+                return False, count, 0
+            return True, count, daily_limit - count
+        except Exception as exc:  # pragma: no cover - runtime connectivity
+            logger.warning("Redis user rate-limit increment failed, using in-memory fallback: %s", exc)
+
     with _user_limits_lock:
         today = date.today()
 

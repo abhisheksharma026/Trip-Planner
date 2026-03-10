@@ -2,15 +2,9 @@
 
 ## Overview
 
-In Part 7, we built our custom tools that agents use to perform specific tasks. Now, let's create the **Web Interface** - a modern, responsive web application that users can interact with.
+Now we add the user-facing layer. The focus is a clean MVP interface that supports quick iteration: simple query flow, feedback capture, and responsive behavior.
 
-Our web interface will provide:
-
-1. **Modern UI**: Clean, intuitive design with good UX
-2. **Real-time responses**: Streaming responses for better UX
-3. **Sample queries**: Quick-start options for new users
-4. **Feedback collection**: Gather user feedback for improvement
-5. **Responsive design**: Works on desktop and mobile
+The UI is intentionally straightforward so backend behavior is easier to validate while features are still changing.
 
 ## Web Architecture
 

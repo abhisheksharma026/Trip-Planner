@@ -10,6 +10,9 @@ from google.adk.sessions import Session
 from google.genai.types import Content, Part
 from trip_planner.agents.concierge import ConciergeAgent
 from trip_planner.core.session_manager import SessionManager
+from trip_planner.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 # Try to import Opik for observability
 try:
@@ -85,9 +88,7 @@ class TripPlannerRunner:
         query_num = self.session_manager.get_query_count(user_id) + 1
         conversation_id = self.session_manager.get_conversation_id(user_id)
         
-        print(f"\nUser Query #{query_num}: '{query}'")
-        print(f"Conversation ID: {conversation_id}")
-        print("=" * 60)
+        logger.info("User query #%s started for conversation %s", query_num, conversation_id)
         
         # Create a span for this query under the conversation trace (skip for dummy queries)
         query_span = None
@@ -106,7 +107,7 @@ class TripPlannerRunner:
                     query_span.update(output={"response": final_response[:2000] if final_response else "No response"})
                     query_span.end()
                 except Exception as e:
-                    print(f"Could not update query span: {e}")
+                    logger.warning("Could not update query span: %s", e)
         finally:
             # Clear the global span
             set_current_query_span(None)
@@ -114,11 +115,9 @@ class TripPlannerRunner:
         # Track this query-response in the conversation (skip for dummy queries)
         if not is_dummy_query:
             self.session_manager.add_query_to_conversation(user_id, query, final_response)
+        await self.session_manager.persist_user_memory(user_id, session)
         
-        print("=" * 60)
-        print("Response:")
-        print(final_response)
-        print("=" * 60 + "\n")
+        logger.info("User query #%s completed.", query_num)
         
         return final_response, session
     
@@ -159,11 +158,9 @@ class TripPlannerRunner:
                         # If no text parts, try to get string representation
                         final_response = str(event.content) if event.content else "Response received but no text content found."
         
-        except Exception as e:
-            final_response = f"An error occurred: {e}"
-            print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            logger.exception("Agent query failed")
+            final_response = "I encountered an error processing your request. Please try again."
         
         # Fallback: use collected text if final_response is still empty
         if not final_response and all_text_parts:
@@ -192,10 +189,8 @@ class TripPlannerRunner:
         Args:
             user_id: Unique identifier for the user
         """
-        print("\n" + "=" * 60)
-        print("AI Trip Planner - Interactive Mode")
-        print("=" * 60)
-        print("Type 'quit', 'exit', or 'new' (to start fresh) to end the session.\n")
+        logger.info("AI Trip Planner interactive mode started.")
+        logger.info("Type 'quit', 'exit', or 'new' (to start fresh) to end the session.")
         
         session = await self.session_manager.get_or_create_session(user_id)
         
@@ -208,12 +203,12 @@ class TripPlannerRunner:
                 
                 if query.lower() in ['quit', 'exit', 'q']:
                     self.end_conversation(user_id, "quit")
-                    print("\nGoodbye! Happy travels!")
+                    logger.info("Interactive session ended by user.")
                     break
                 
                 if query.lower() == 'new':
                     session = await self.session_manager.create_new_session(user_id)
-                    print("Started a new session. Previous context cleared.\n")
+                    logger.info("Started a new session. Previous context cleared.")
                     continue
                 
                 # Run the query
@@ -221,7 +216,7 @@ class TripPlannerRunner:
                 
             except KeyboardInterrupt:
                 self.end_conversation(user_id, "interrupted")
-                print("\n\nGoodbye! Happy travels!")
+                logger.info("Interactive session interrupted.")
                 break
             except Exception as e:
-                print(f"\nError: {e}\n")
+                logger.exception("Interactive session error: %s", e)

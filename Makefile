@@ -56,7 +56,7 @@ logs:
 
 # Quality
 test:
-	python -m pytest tests/ -v --cov=trip_planner --cov-report=html
+	python -m pytest tests/ -v
 
 lint:
 	python -m pylint trip_planner/ app.py

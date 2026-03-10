@@ -2,14 +2,9 @@
 
 ## Overview
 
-Welcome to this comprehensive series on building a production-grade AI agent from scratch. In this series, we'll build a sophisticated multi-agent trip planning system using Google's Agent Development Kit (ADK).
+I wanted this series to read like real build notes, not a polished postmortem. So in Part 1, we start with the architecture decisions that made the MVP move quickly without turning into chaos later.
 
-This is Phase I of the project - the MVP (Minimum Viable Product) that includes:
-- Multi-agent architecture with specialized experts
-- Session management for conversation context
-- Custom tools for external integrations
-- Modern web interface with FastAPI
-- Basic observability with Opik
+Phase I is intentionally practical: a multi-agent core, session memory, a simple web surface, and enough observability to debug behavior when things go wrong.
 
 ## What We're Building
 

@@ -2,7 +2,9 @@
 
 ## Overview
 
-In Phase I, we built a fully functional AI Trip Planner. Now in Phase II, we're making it **production-ready**. The first critical concern is **rate limiting** - without it, your application is vulnerable to API quota exhaustion, cost overruns, and abuse.
+Phase II starts with guardrails. Once real users hit the app, uncontrolled request volume quickly becomes a cost and stability problem.
+
+This part implements multi-layer rate limiting so we can protect API budget and keep service behavior predictable under load.
 
 ## Why Rate Limiting Matters
 
