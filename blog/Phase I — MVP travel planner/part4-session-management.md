@@ -2,9 +2,9 @@
 
 ## Overview
 
-In Part 3, we built our configuration module that handles API keys and model settings. Now, let's create the **Session Manager** - a critical component that enables our agent to remember context across multiple turns of conversation.
+This is where the assistant stops feeling stateless. We add a session manager so the system can carry context across turns, track conversation progress, and stay debuggable.
 
-Session management is what transforms our agent from a forgetful chatbot into a helpful assistant that can maintain coherent, multi-turn conversations.
+For an MVP, good session handling is the difference between a demo and a usable assistant.
 
 ## Why Session Management Matters
 

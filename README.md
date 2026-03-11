@@ -5,35 +5,56 @@ A modular multi-agent system for intelligent trip planning built with Google ADK
 ## Architecture
 
 ```
-                    ┌─────────────────────────┐
-                    │   Concierge (Root)      │
-                    │   - Greets user         │
-                    │   - Delegates tasks     │
-                    │   - Coordinates flow    │
-                    └───────────┬─────────────┘
-                                │
-                ┌───────────────┼───────────────┐
-                │               │               │
-                ▼               ▼               ▼
-    ┌─────────────────┐ ┌──────────────┐ ┌──────────────┐
-    │ Flight          │ │ Hotel        │ │ Financial    │
-    │ Recommender     │ │ Specialist   │ │ Planner      │
-    └─────────────────┘ └──────────────┘ └──────────────┘
+Client (Web/CLI)
+      │
+      ▼
+FastAPI App (`app.py`)
+  ├─ Middleware: request-id, security headers, content-type, request logging
+  ├─ Auth + Session cookies (secure-by-default, localhost-only override)
+  ├─ Rate limits: per-IP (SlowAPI), global daily, anonymous/user daily quotas
+  ├─ Admin debug endpoint (`/api/admin/debug/redis`) metadata-only
+  │
+  ▼
+TripPlannerRunner + SessionManager
+  ├─ ADK InMemorySessionService runtime
+  ├─ Optional Redis snapshot persistence for conversation memory
+  └─ Opik traces/spans (optional)
+  │
+  ▼
+Concierge Agent (root orchestrator)
+  ├─ Flight Recommender
+  ├─ Hotel Specialist
+  ├─ Financial Planner
+  └─ Tools: geolocation, Amadeus flights, itinerary export
+
+Persistence/Infra
+  ├─ SQLite: users/auth records
+  ├─ Redis (optional): rate limits + session-memory snapshots
+  └─ Structured logging with request correlation
 ```
 
 ## Project Structure
 
 ```
 Trip Planner/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # CI lint + tests
 ├── trip_planner/              # Main package
 │   ├── __init__.py
-│   ├── config.py              # Configuration and API setup
+│   ├── config.py              # Centralized application config
+│   ├── logging_utils.py       # Structured logging + request-id context
 │   ├── agents/                # Agent modules
 │   │   ├── __init__.py
 │   │   ├── concierge.py       # Root orchestrator
 │   │   ├── flight_recommender.py
 │   │   ├── hotel_specialist.py
 │   │   └── financial_planner.py
+│   ├── middleware/            # HTTP middleware
+│   │   ├── request_id.py
+│   │   ├── request_logging.py
+│   │   ├── security_headers.py
+│   │   └── content_type.py
 │   ├── tools/                 # Custom tools
 │   │   ├── __init__.py
 │   │   ├── geolocation.py     # City to coordinates
@@ -44,9 +65,12 @@ Trip Planner/
 │       ├── session_manager.py  # Session handling
 │       ├── runner.py          # Query execution
 │       ├── rate_limiter.py    # Rate limiting
-│       └── auth.py            # User authentication
+│       ├── auth.py            # User authentication
+│       ├── redis_client.py    # Shared Redis client helper
+│       └── redis_debug.py     # Safe Redis metadata inspector
 ├── app.py                     # FastAPI web application
 ├── main.py                    # CLI application entry point
+├── tests/                     # Security/unit/integration tests
 ├── templates/                 # HTML templates
 │   └── index.html            # Web app frontend
 ├── static/                    # Static assets
@@ -59,6 +83,7 @@ Trip Planner/
 ├── Makefile                   # Development commands
 ├── render.yaml                # Render deployment
 ├── requirements.txt           # Dependencies
+├── blog/                      # Build log / implementation walkthrough
 └── README.md                  # This file
 ```
 
@@ -67,10 +92,12 @@ Trip Planner/
 - **Multi-Agent System**: Specialized agents for flights, hotels, and finances
 - **Custom Tools**: Geolocation, real flight search (Amadeus), and export capabilities
 - **Conversational Memory**: Session-based context retention
+- **Redis Session Snapshots (Optional)**: Persist and restore conversation memory across app restarts
 - **Budget Management**: Financial analysis and cost tracking
 - **Real-time Search**: Google Search integration for live prices
+- **Request-Correlated Logging**: Structured logs with request ID propagation
 - **Modular Design**: Clean separation of responsibilities
-- **Production Ready**: Rate limiting, authentication, Docker support
+- **Production Hardening**: Secure cookies, email validation, CI checks, branch protection
 
 ## Production Features
 
@@ -82,9 +109,21 @@ Trip Planner/
 
 ### User Authentication
 - Email/password registration
+- Email validation + canonical normalization
 - Secure password hashing (PBKDF2-SHA256)
 - SQLite database for persistence
-- Session-based authentication
+- Session-based authentication with secure-by-default cookies
+
+### Redis-Backed Services (Optional)
+- Distributed counters for rate limiting across app instances
+- Conversation-memory snapshot persistence with TTL
+- Admin-only metadata debug endpoint: `GET /api/admin/debug/redis`
+
+### CI and Merge Controls
+- GitHub Actions workflow for lint + tests
+- Required status checks on `main`
+- Minimum 1 approving PR review
+- `enforce_admins=true` enabled
 
 ### Docker Support
 - Containerized deployment
@@ -221,9 +260,23 @@ The project includes a modern web interface for easy interaction.
 - **Rate Limit Feedback**: Visual warnings when approaching limits
 - **Modern UI**: Beautiful, responsive design that works on all devices
 
+### Admin Redis Debug Endpoint
+
+For operational debugging, the API exposes:
+
+- `GET /api/admin/debug/redis`
+
+Access rules:
+
+- endpoint must be enabled in config (`ADMIN_DEBUG_ENABLED=True`)
+- caller must be authenticated
+- caller must be allowlisted (`ADMIN_DEBUG_ALLOWED_EMAILS` or `ADMIN_DEBUG_ALLOWED_USER_IDS`)
+
+Response is metadata-only (counts, TTLs, key summaries). It does not expose full session event payloads.
+
 ### Sample Queries in the Web App
 
-The web interface includes 5 sample queries demonstrating:
+The web interface includes sample queries demonstrating:
 
 1. **Complete Trip Planning**: Full end-to-end trip planning with all details
 2. **Vague Request**: How the agent handles incomplete information
@@ -279,8 +332,8 @@ You: Can you also check flights for my return trip?
 
 ### `trip_planner/config.py`
 - API key configuration
-- Model configuration
-- Environment setup
+- model selection + observability setup
+- session cookie/rate-limit/session-memory/admin-debug settings
 
 ### `trip_planner/agents/`
 - **concierge.py**: Root orchestrator that coordinates all agents
@@ -296,8 +349,20 @@ You: Can you also check flights for my return trip?
 ### `trip_planner/core/`
 - **session_manager.py**: Manages conversation sessions and memory
 - **runner.py**: Executes queries and handles agent interactions
-- **rate_limiter.py**: Multi-level rate limiting
-- **auth.py**: User authentication and session management
+- **rate_limiter.py**: Multi-level rate limiting (Redis-backed with fallback)
+- **auth.py**: User authentication, session middleware, per-user quotas
+- **redis_client.py**: Shared Redis connectivity helper
+- **redis_debug.py**: Safe metadata extraction for admin Redis debug endpoint
+
+### `trip_planner/middleware/`
+- **request_id.py**: request correlation ID propagation
+- **request_logging.py**: structured request completion/error logs
+- **security_headers.py**: HTTP hardening headers
+- **content_type.py**: request content-type validation
+
+### `trip_planner/logging_utils.py`
+- centralized logging setup
+- request ID context injection across logs
 
 ## Deployment
 
@@ -335,6 +400,12 @@ You: Can you also check flights for my return trip?
 | `DAILY_API_LIMIT` | Global daily limit | 200 |
 | `ANONYMOUS_FREE_LIMIT` | Free queries for anonymous | 5 |
 | `DATABASE_PATH` | SQLite database path | data/trip_planner.db |
+| `RATE_LIMIT_BACKEND` | `memory` or `redis` backend | `memory` |
+| `RATE_LIMIT_REDIS_URL` | Redis URL for rate-limits | `redis://localhost:6379/0` |
+| `SESSION_MEMORY_BACKEND` | `memory` or `redis` for conversation snapshots | `memory` |
+| `SESSION_MEMORY_REDIS_URL` | Redis URL for session-memory snapshots | `redis://localhost:6379/0` |
+
+Most operational toggles are now config-first in `trip_planner/config.py` for MVP simplicity.
 
 ## Testing
 
@@ -367,6 +438,14 @@ This project is documented in a blog series:
 - [Part 1: Rate Limiting](blog/Phase%20II%20—%20Production%20Ready/part1-rate-limiting.md)
 - [Part 2: Authentication](blog/Phase%20II%20—%20Production%20Ready/part2-authentication.md)
 - [Part 3: Docker and Deployment](blog/Phase%20II%20—%20Production%20Ready/part3-docker-and-deployment.md)
+
+### Phase III - CI and Hardening
+- [Part 1: HTTPS-Only Cookies](blog/Phase%20III%20—%20CI/part1-https-only-cookies.md)
+- [Part 2: Email Validation](blog/Phase%20III%20—%20CI/part2-email-validation.md)
+- [Part 3: CI and Branch Protection](blog/Phase%20III%20—%20CI/part3-ci-and-branch-protection.md)
+- [Part 4: Logging Standardization](blog/Phase%20III%20—%20CI/part4-logging-standardization.md)
+- [Part 5: Redis-Backed Rate Limiting](blog/Phase%20III%20—%20CI/part5-redis-backed-rate-limiting.md)
+- [Part 6: Redis-Backed Session Memory](blog/Phase%20III%20—%20CI/part6-redis-backed-session-memory.md)
 
 ## License
 

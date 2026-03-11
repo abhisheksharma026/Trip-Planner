@@ -2,7 +2,9 @@
 
 ## Overview
 
-In Part 1, we introduced the architecture and project structure. Now, let's get our development environment set up. This is foundational work that everything else will build upon.
+Part 2 is the setup work that usually gets rushed and then hurts later. We are wiring a clean dev environment, predictable dependencies, and config hygiene so the rest of the build is repeatable.
+
+None of this is glamorous, but this is where most "works on my machine" issues are prevented.
 
 ## What We'll Build
 

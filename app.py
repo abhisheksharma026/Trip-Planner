@@ -5,19 +5,11 @@ FastAPI web application for the AI Trip Planner.
 import os
 import sys
 import socket
-import logging
 from contextlib import asynccontextmanager
-from typing import Optional, Dict
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from typing import Optional, Dict, Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,12 +18,20 @@ from pydantic import BaseModel, Field
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from trip_planner.config import setup_api_key, setup_opik
+from trip_planner.config import (
+    setup_api_key,
+    setup_opik,
+    get_logging_settings,
+    get_admin_debug_settings,
+    get_rate_limit_settings,
+    get_session_memory_settings,
+)
 from trip_planner.core.session_manager import SessionManager
 from trip_planner.core.runner import TripPlannerRunner
+from trip_planner.core.redis_client import get_redis_client
+from trip_planner.core.redis_debug import collect_redis_debug_snapshot
 from trip_planner.core.rate_limiter import (
     limiter,
-    global_limiter,
     check_global_limit,
     get_global_status,
     RATE_LIMIT_PER_MINUTE,
@@ -41,15 +41,17 @@ from trip_planner.core.rate_limiter import (
 from trip_planner.core.auth import (
     get_session_middleware,
     get_current_user,
-    require_user,
     register_user,
     login_user,
     logout_user,
     set_session_user,
     get_user_rate_limit,
     increment_user_rate_limit,
-    User,
 )
+from trip_planner.logging_utils import configure_logging, get_logger
+
+configure_logging(level=get_logging_settings()["level"])
+logger = get_logger(__name__)
 
 # Import middleware
 from trip_planner.middleware import (
@@ -89,10 +91,10 @@ def initialize_components() -> bool:
         session_manager = SessionManager()
         runner = TripPlannerRunner(session_manager)
 
-        print("Trip Planner initialized successfully!")
+        logger.info("Trip Planner initialized successfully.")
         return True
     except Exception as e:
-        print(f"Failed to initialize: {e}")
+        logger.exception("Failed to initialize Trip Planner: %s", e)
         return False
 
 
@@ -101,10 +103,10 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     if not initialize_components():
-        print("Warning: Trip Planner failed to initialize")
+        logger.warning("Trip Planner failed to initialize.")
     yield
     # Shutdown
-    print("Shutting down Trip Planner...")
+    logger.info("Shutting down Trip Planner...")
 
 
 # Create FastAPI app with lifespan
@@ -130,12 +132,12 @@ if not allowed_origins or allowed_origins == [""]:
     # Default: allow local development only with credentials
     allowed_origins = LOCALHOST_ORIGINS
     allow_credentials = True
-    print("[INFO] CORS: Using local development origins only")
+    logger.info("CORS using local development origins only.")
 elif "*" in allowed_origins:
     # Wildcard mode: disable credentials for security
     allowed_origins = ["*"]
     allow_credentials = False
-    print("[WARNING] CORS: Wildcard origins detected - credentials disabled")
+    logger.warning("CORS wildcard origins detected; credentials disabled.")
 else:
     allow_credentials = True
 
@@ -210,11 +212,24 @@ class SamplesResponse(BaseModel):
     samples: list[SampleQuery]
 
 
+class AdminRedisDebugResponse(BaseModel):
+    """Admin Redis debug response model."""
+    success: bool
+    redis_connected: bool
+    snapshot: Optional[dict[str, Any]] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
-def build_rate_limit_headers(is_authenticated: bool, anon_remaining: int) -> Dict[str, str]:
+def build_rate_limit_headers(
+    is_authenticated: bool,
+    anon_remaining: int,
+    user_remaining: Optional[int] = None,
+) -> Dict[str, str]:
     """Build rate limit headers for API responses."""
     status = get_global_status()
     return {
@@ -223,8 +238,16 @@ def build_rate_limit_headers(is_authenticated: bool, anon_remaining: int) -> Dic
         "X-RateLimit-Reset": status["reset_date"],
         "X-RateLimit-Used": str(status["count"]),
         "X-Anonymous-Remaining": str(anon_remaining) if not is_authenticated else "unlimited",
-        "X-Authenticated": str(is_authenticated).lower()
+        "X-Authenticated": str(is_authenticated).lower(),
+        "X-User-RateLimit-Remaining": str(user_remaining) if is_authenticated and user_remaining is not None else "n/a",
     }
+
+
+def is_admin_debug_user(user) -> bool:
+    """Check whether the authenticated user can access admin debug endpoints."""
+    settings = get_admin_debug_settings()
+    email = (user.email or "").strip().lower()
+    return (email in settings["allowed_emails"]) or (user.id in settings["allowed_user_ids"])
 
 
 # Routes
@@ -247,6 +270,8 @@ async def handle_query(request: Request, query_request: QueryRequest):
     # Check if user is authenticated
     current_user = get_current_user(request)
     is_authenticated = current_user is not None
+    anon_remaining = 0
+    user_remaining = None
     
     # For anonymous users, check the 5-query limit
     if not is_authenticated:
@@ -256,6 +281,13 @@ async def handle_query(request: Request, query_request: QueryRequest):
             raise HTTPException(
                 status_code=401,
                 detail="You've used all 5 free queries! Please log in to continue planning your trip. It's free and only takes a moment."
+            )
+    else:
+        allowed, user_count, user_remaining = increment_user_rate_limit(f"user:{current_user.id}")
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="User daily rate limit exceeded. Please try again tomorrow.",
             )
     
     # Check global daily limit first
@@ -295,15 +327,16 @@ async def handle_query(request: Request, query_request: QueryRequest):
 
         return JSONResponse(
             content=query_response.model_dump(),
-            headers=build_rate_limit_headers(is_authenticated, anon_remaining)
+            headers=build_rate_limit_headers(is_authenticated, anon_remaining, user_remaining)
         )
 
     except HTTPException:
         raise  # Re-raise HTTP exceptions
     except Exception as e:
+        logger.exception("Failed to handle query: %s", e)
         return QueryResponse(
             success=False,
-            error=str(e)
+            error="An internal error occurred. Please try again."
         )
 
 
@@ -356,22 +389,23 @@ async def handle_feedback(request: FeedbackRequest):
     """Handle user feedback (satisfaction) and end the conversation."""
     try:
         logger.info(
-            f"Feedback received: {request.feedback} from user {request.user_id} (session: {request.session_id})"
+            "Feedback received: %s from user %s (session: %s)",
+            request.feedback, request.user_id, request.session_id
         )
 
         if runner and request.feedback == "satisfied":
             runner.end_conversation(request.user_id, request.feedback)
-            logger.info(f"Conversation ended for user {request.user_id}")
+            logger.info("Conversation ended for user %s", request.user_id)
 
         return FeedbackResponse(
             success=True,
             message="Feedback recorded and conversation ended"
         )
     except Exception as e:
-        logger.error(f"Error handling feedback: {e}")
+        logger.error("Error handling feedback: %s", e)
         return FeedbackResponse(
             success=False,
-            error=str(e)
+            error="An internal error occurred. Please try again."
         )
 
 
@@ -410,19 +444,84 @@ async def rate_limit_status(request: Request):
         }
 
 
+@app.get("/api/admin/debug/redis", response_model=AdminRedisDebugResponse)
+async def admin_debug_redis(
+    request: Request,
+    max_keys: int = Query(default=25, ge=1, le=100, description="Maximum keys scanned per group."),
+):
+    """
+    Admin-only Redis debug endpoint.
+
+    Returns metadata-only counters and snapshot summaries without exposing full
+    session events or full query payloads.
+    """
+    settings = get_admin_debug_settings()
+    if not settings["enabled"]:
+        raise HTTPException(status_code=404, detail="Admin debug endpoint is disabled")
+
+    current_user = get_current_user(request)
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if not is_admin_debug_user(current_user):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    rate_limit_settings = get_rate_limit_settings()
+    session_memory_settings = get_session_memory_settings()
+    redis_client = None
+
+    if rate_limit_settings["backend"] == "redis":
+        redis_client = get_redis_client(rate_limit_settings["redis_url"])
+
+    if redis_client is None and session_memory_settings["backend"] == "redis":
+        redis_client = get_redis_client(session_memory_settings["redis_url"])
+
+    if redis_client is None:
+        return AdminRedisDebugResponse(
+            success=True,
+            redis_connected=False,
+            message="Redis backend is not enabled or not reachable.",
+        )
+
+    effective_max_keys = max(1, min(int(max_keys), settings["max_keys_per_group"]))
+    snapshot = collect_redis_debug_snapshot(
+        redis_client=redis_client,
+        rate_limit_prefix=rate_limit_settings["key_prefix"],
+        session_memory_prefix=session_memory_settings["key_prefix"],
+        max_keys_per_group=effective_max_keys,
+    )
+    return AdminRedisDebugResponse(
+        success=True,
+        redis_connected=True,
+        snapshot=snapshot,
+    )
+
+
 # =============================================================================
 # Authentication Routes
 # =============================================================================
 
 class LoginRequest(BaseModel):
     """Login request model."""
-    email: str = Field(..., description="User email")
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$",
+        description="User email",
+    )
     password: str = Field(..., description="User password")
 
 
 class RegisterRequest(BaseModel):
     """Registration request model."""
-    email: str = Field(..., description="User email")
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$",
+        description="User email",
+    )
     password: str = Field(..., min_length=6, description="User password (min 6 chars)")
     name: Optional[str] = Field(None, description="User name")
 
@@ -450,9 +549,10 @@ async def get_user(request: Request):
 
 
 @app.post("/api/register", response_model=AuthResponse)
+@limiter.limit("3/minute")
 async def api_register(request: Request, data: RegisterRequest):
     """Register a new user."""
-    user, error = register_user(data.email, data.password, data.name)
+    user, error = register_user(str(data.email), data.password, data.name)
     
     if error:
         return AuthResponse(success=False, error=error)
@@ -467,9 +567,10 @@ async def api_register(request: Request, data: RegisterRequest):
 
 
 @app.post("/api/login", response_model=AuthResponse)
+@limiter.limit("5/minute")
 async def api_login(request: Request, data: LoginRequest):
     """Login with email and password."""
-    user, error = login_user(data.email, data.password)
+    user, error = login_user(str(data.email), data.password)
     
     if error:
         return AuthResponse(success=False, error=error)
@@ -488,17 +589,6 @@ async def api_logout(request: Request):
     logout_user(request)
     return {"success": True, "message": "Logged out successfully"}
 
-
-@app.get("/test")
-async def test():
-    """Simple test endpoint to verify server is working."""
-    return {
-        "message": "Server is working!",
-        "template_folder": os.path.join(BASE_DIR, "templates"),
-        "static_folder": os.path.join(BASE_DIR, "static"),
-        "template_exists": os.path.exists(os.path.join(BASE_DIR, "templates", "index.html")),
-        "runner_initialized": runner is not None
-    }
 
 
 def find_free_port(start_port: int = 5000, max_attempts: int = 10) -> Optional[int]:
@@ -526,21 +616,21 @@ if __name__ == "__main__":
     port = default_port
 
     if is_port_in_use(port):
-        print(f"Port {port} is already in use. Finding an available port...")
+        logger.warning("Port %s is already in use. Finding an available port...", port)
         free_port = find_free_port(port + 1)
         if free_port:
             port = free_port
-            print(f"Using port {port} instead")
+            logger.info("Using port %s instead.", port)
         else:
-            print("Could not find an available port. Please free up a port or set PORT environment variable.")
+            logger.error("Could not find an available port. Please free up a port or set PORT environment variable.")
             sys.exit(1)
 
-    print("AI Trip Planner Web Application (FastAPI)")
-    print(f"Server starting on http://localhost:{port}")
-    print(f"API docs available at http://localhost:{port}/docs")
+    logger.info("AI Trip Planner Web Application (FastAPI)")
+    logger.info("Server starting on http://localhost:%s", port)
+    logger.info("API docs available at http://localhost:%s/docs", port)
 
     if port != default_port:
-        print(f"Note: Port {default_port} was in use, using {port} instead")
+        logger.info("Port %s was in use, using %s instead.", default_port, port)
 
     uvicorn.run(
         "app:app",

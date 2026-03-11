@@ -4,8 +4,15 @@ Session Manager - Handles conversation sessions and memory.
 
 import os
 import uuid
+import json
 from google.adk.sessions import InMemorySessionService, Session
+from google.adk.events import Event
 from typing import Optional, Any
+from trip_planner.config import get_session_memory_settings
+from trip_planner.core.redis_client import get_redis_client
+from trip_planner.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 # Try to import Opik for observability
 try:
@@ -33,6 +40,19 @@ class SessionManager:
         self.conversation_queries = {}  # user_id -> list of queries
         self.opik_traces = {}  # user_id -> Opik trace object
         self.opik_client = None
+        self.session_memory_settings = get_session_memory_settings()
+        self.session_memory_backend = self.session_memory_settings["backend"]
+        self.session_memory_key_prefix = self.session_memory_settings["key_prefix"]
+        self.session_memory_ttl_seconds = int(self.session_memory_settings["ttl_seconds"])
+        self.session_memory_redis = (
+            get_redis_client(self.session_memory_settings["redis_url"])
+            if self.session_memory_backend == "redis"
+            else None
+        )
+        logger.info(
+            "Conversation memory backend initialized: %s",
+            "redis" if self.session_memory_redis is not None else "memory",
+        )
         
         # Initialize Opik client once
         if OPIK_AVAILABLE:
@@ -40,9 +60,106 @@ class SessionManager:
                 self.opik_client = opik.Opik(
                     project_name=os.environ.get('OPIK_PROJECT_NAME', 'AI Travel Planner')
                 )
-                print("Opik client initialized")
+                logger.info("Opik client initialized.")
             except Exception as e:
-                print(f"Could not initialize Opik client: {e}")
+                logger.warning("Could not initialize Opik client: %s", e)
+
+    def _session_memory_key(self, user_id: str) -> str:
+        """Build Redis key for persisted conversation memory."""
+        return f"{self.session_memory_key_prefix}:session_memory:{self.app_name}:{user_id}"
+
+    async def _restore_from_persistent_memory(self, user_id: str) -> Optional[Session]:
+        """Restore session + conversation metadata from Redis if available."""
+        if self.session_memory_redis is None:
+            return None
+
+        key = self._session_memory_key(user_id)
+        try:
+            payload_raw = self.session_memory_redis.get(key)
+            if not payload_raw:
+                return None
+            payload = json.loads(payload_raw)
+        except Exception as exc:
+            logger.warning("Failed to load persisted conversation memory for '%s': %s", user_id, exc)
+            return None
+
+        session_data = payload.get("session")
+        if not isinstance(session_data, dict):
+            return None
+
+        session_id = session_data.get("id")
+        state = session_data.get("state") or {}
+        events = session_data.get("events") or []
+
+        restored_session = None
+        if session_id:
+            try:
+                restored_session = await self.session_service.get_session(
+                    app_name=self.app_name,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+            except Exception:
+                restored_session = None
+
+        if restored_session is None:
+            restored_session = await self.session_service.create_session(
+                app_name=self.app_name,
+                user_id=user_id,
+                state=state,
+                session_id=session_id,
+            )
+            for event_data in events:
+                try:
+                    event_obj = Event.model_validate(event_data)
+                    self.session_service.append_event(restored_session, event_obj)
+                except Exception as exc:
+                    logger.warning("Skipping invalid persisted event during restore: %s", exc)
+
+        self.current_sessions[user_id] = restored_session
+        self.conversation_ids[user_id] = payload.get("conversation_id") or f"conv_{uuid.uuid4().hex[:12]}"
+        self.conversation_queries[user_id] = payload.get("conversation_queries") or []
+        self._create_conversation_trace(user_id, restored_session.id, self.conversation_ids[user_id])
+        logger.info("Restored conversation memory from Redis for user '%s' (session=%s).", user_id, restored_session.id)
+        return restored_session
+
+    async def persist_user_memory(self, user_id: str, session: Optional[Session] = None) -> None:
+        """Persist current session + conversation metadata to Redis."""
+        if self.session_memory_redis is None:
+            return
+
+        session_obj = session or self.current_sessions.get(user_id)
+        if session_obj is None:
+            return
+
+        try:
+            latest_session = await self.session_service.get_session(
+                app_name=self.app_name,
+                user_id=user_id,
+                session_id=session_obj.id,
+            )
+            session_to_store = latest_session or session_obj
+            payload = {
+                "session": session_to_store.model_dump(mode="json"),
+                "conversation_id": self.conversation_ids.get(user_id),
+                "conversation_queries": self.conversation_queries.get(user_id, []),
+            }
+            self.session_memory_redis.set(
+                self._session_memory_key(user_id),
+                json.dumps(payload),
+                ex=self.session_memory_ttl_seconds,
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist conversation memory for '%s': %s", user_id, exc)
+
+    def clear_persisted_memory(self, user_id: str) -> None:
+        """Remove persisted conversation memory from Redis."""
+        if self.session_memory_redis is None:
+            return
+        try:
+            self.session_memory_redis.delete(self._session_memory_key(user_id))
+        except Exception as exc:
+            logger.warning("Failed to clear persisted conversation memory for '%s': %s", user_id, exc)
     
     async def get_or_create_session(self, user_id: str) -> Session:
         """
@@ -56,6 +173,10 @@ class SessionManager:
             Session object for the user
         """
         if user_id not in self.current_sessions:
+            restored_session = await self._restore_from_persistent_memory(user_id)
+            if restored_session is not None:
+                return restored_session
+
             session = await self.session_service.create_session(
                 app_name=self.app_name,
                 user_id=user_id
@@ -69,12 +190,13 @@ class SessionManager:
             
             # Create ONE Opik trace for the entire conversation
             self._create_conversation_trace(user_id, session.id, conversation_id)
+            await self.persist_user_memory(user_id, session)
             
-            print(f"Created new session for user '{user_id}': {session.id}")
-            print(f"Conversation ID: {conversation_id}")
+            logger.info("Created new session for user '%s': %s", user_id, session.id)
+            logger.info("Conversation ID: %s", conversation_id)
         else:
             session = self.current_sessions[user_id]
-            print(f"Using existing session for user '{user_id}': {session.id}")
+            logger.info("Using existing session for user '%s': %s", user_id, session.id)
         
         return session
     
@@ -105,9 +227,10 @@ class SessionManager:
         
         # Create new Opik trace
         self._create_conversation_trace(user_id, session.id, conversation_id)
+        await self.persist_user_memory(user_id, session)
         
-        print(f"Created new session for user '{user_id}': {session.id}")
-        print(f"New conversation ID: {conversation_id}")
+        logger.info("Created new session for user '%s': %s", user_id, session.id)
+        logger.info("New conversation ID: %s", conversation_id)
         
         return session
     
@@ -127,9 +250,9 @@ class SessionManager:
                     tags=["conversation", "trip_planner"]
                 )
                 self.opik_traces[user_id] = trace
-                print(f"Created Opik conversation trace: {trace.id}")
+                logger.info("Created Opik conversation trace: %s", trace.id)
             except Exception as e:
-                print(f"Could not create Opik trace: {e}")
+                logger.warning("Could not create Opik trace: %s", e)
     
     def get_conversation_trace(self, user_id: str) -> Any:
         """Get the Opik trace object for the user's conversation."""
@@ -157,7 +280,7 @@ class SessionManager:
                 )
                 return span
             except Exception as e:
-                print(f"Could not create query span: {e}")
+                logger.warning("Could not create query span: %s", e)
         return None
     
     def get_conversation_id(self, user_id: str) -> str:
@@ -193,9 +316,9 @@ class SessionManager:
                     }
                 )
                 trace.end()
-                print(f"Ended Opik trace for user '{user_id}'")
+                logger.info("Ended Opik trace for user '%s'", user_id)
             except Exception as e:
-                print(f"Could not end Opik trace: {e}")
+                logger.warning("Could not end Opik trace: %s", e)
         
         # Clean up
         if user_id in self.opik_traces:
@@ -205,11 +328,13 @@ class SessionManager:
         """Get the underlying session service."""
         return self.session_service
     
-    def clear_session(self, user_id: str):
-        """Clear a user's session from memory."""
+    def clear_session(self, user_id: str, clear_persistent: bool = False):
+        """Clear a user's session from memory and optionally persistent storage."""
         if user_id in self.current_sessions:
             del self.current_sessions[user_id]
-            print(f"Cleared session for user '{user_id}'")
+            logger.info("Cleared session for user '%s'", user_id)
+        if clear_persistent:
+            self.clear_persisted_memory(user_id)
     
     def end_conversation(self, user_id: str, feedback: str = None):
         """
@@ -237,9 +362,9 @@ class SessionManager:
                     }
                 )
                 trace.end()
-                print(f"Ended Opik trace with feedback: {feedback}")
+                logger.info("Ended Opik trace with feedback: %s", feedback)
             except Exception as e:
-                print(f"Could not end Opik trace: {e}")
+                logger.warning("Could not end Opik trace: %s", e)
         
         # Clean up all user data
         if user_id in self.opik_traces:
@@ -249,5 +374,5 @@ class SessionManager:
         if user_id in self.conversation_queries:
             del self.conversation_queries[user_id]
         
-        self.clear_session(user_id)
-        print(f"Conversation ended for user '{user_id}' with feedback: {feedback}")
+        self.clear_session(user_id, clear_persistent=True)
+        logger.info("Conversation ended for user '%s' with feedback: %s", user_id, feedback)

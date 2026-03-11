@@ -4,8 +4,8 @@ Security Headers Middleware.
 Adds security-related HTTP headers to all responses.
 """
 
-import os
 from fastapi import Request, Response
+from trip_planner.config import APP_ENVIRONMENT
 
 
 async def add_security_headers(request: Request, call_next):
@@ -37,7 +37,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
 
     # HSTS only in production with HTTPS
-    if os.getenv("ENVIRONMENT") == "production":
+    if APP_ENVIRONMENT == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     return response

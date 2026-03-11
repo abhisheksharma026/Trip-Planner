@@ -2,15 +2,9 @@
 
 ## Overview
 
-In Part 5, we built our specialized agents (Flight, Hotel, Financial, Research, Safety). Now, let's create the **Concierge Orchestrator** - the root agent that coordinates all specialized agents to provide a seamless user experience.
+With specialists in place, we need one coordinator that decides who does what and in what order. This part builds that concierge layer and defines the control flow.
 
-The Concierge is the brain of our multi-agent system. It's the only agent that users interact with directly. It:
-
-1. **Understands user intent**: Parses user queries and determines what's needed
-2. **Delegates to specialists**: Routes requests to appropriate specialized agents
-3. **Coordinates workflows**: Manages multi-step processes
-4. **Ensures safety**: Checks constraints before making recommendations
-5. **Provides explanations**: Explains reasoning behind recommendations
+Think of it as routing + safety checks + response assembly in one place.
 
 ## Concierge Architecture
 

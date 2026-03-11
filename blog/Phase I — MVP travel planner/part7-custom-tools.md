@@ -2,15 +2,9 @@
 
 ## Overview
 
-In Part 6, we built the Concierge Orchestrator that coordinates all specialized agents. Now, let's create the **Custom Tools** that our agents use to perform specific tasks.
+Agents are only useful if they can do more than generate text. In this part we add concrete tools (geolocation, export, flight lookup) so responses are grounded in actions and data.
 
-Tools are functions that agents can call to perform actions. They extend agent capabilities beyond text generation, allowing agents to:
-
-1. **Search for information**: Query external APIs and databases
-2. **Perform calculations**: Compute costs, distances, etc.
-3. **Access real-time data**: Get current prices, availability, etc.
-4. **Execute actions**: Book flights, save files, etc.
-5. **Integrate services**: Connect to third-party APIs
+This is where the system starts behaving like an assistant instead of a chatbot.
 
 ## Our Custom Tools
 

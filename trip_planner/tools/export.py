@@ -26,17 +26,29 @@ def export_itinerary_to_doc(itinerary_content: str, filename: str = None) -> dic
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"trip_itinerary_{timestamp}.md"
-    
+
+    # Sanitize filename to prevent path traversal
+    filename = os.path.basename(filename)
+
     # Ensure .md extension
     if not filename.endswith('.md'):
         filename += '.md'
-    
+
     try:
         # Create output directory if it doesn't exist
         output_dir = os.path.join(os.getcwd(), "itineraries")
         os.makedirs(output_dir, exist_ok=True)
-        
+
         filepath = os.path.join(output_dir, filename)
+
+        # Validate resolved path stays within output directory
+        resolved_output = os.path.realpath(output_dir)
+        resolved_filepath = os.path.realpath(filepath)
+        if not resolved_filepath.startswith(resolved_output + os.sep):
+            return {
+                "status": "error",
+                "message": "Invalid filename: path traversal detected"
+            }
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(itinerary_content)
         

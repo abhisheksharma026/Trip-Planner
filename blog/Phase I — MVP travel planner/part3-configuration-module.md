@@ -2,7 +2,9 @@
 
 ## Overview
 
-In Part 2, we set up our development environment and installed dependencies. Now, let's build the **configuration module** - a critical component that manages API keys, model settings, and observability configuration throughout our application.
+In this step I moved from loose environment setup to a real configuration layer. The goal is simple: one place to load keys/settings, validate what matters, and fail clearly when required values are missing.
+
+This module becomes the control plane for the rest of the app.
 
 ## Why Configuration Matters
 
